@@ -36,6 +36,8 @@ struct ValTagOwned {
     Value val;
     Tag tag;
     bool owned = false;
+
+    bool operator==(const ValTagOwned&) const = default;
 };
 static_assert(std::is_trivially_copyable<ValTagOwned>::value);
 static_assert(sizeof(ValTagOwned) == 16);
@@ -75,6 +77,7 @@ struct InstrAdd {
     Register left;
     Register right;
 };
+// Computes whether left and right are equal.
 struct InstrEq {
     Register dst;
     Register left;
@@ -86,17 +89,28 @@ struct InstrFillEmpty {
     Register right;
 };
 
+// Tests whether left and right are equal, skipping the following jump if not.
+struct InstrTestEq {
+    // No dest
+    Register left;
+    Register right;
+};
+
+struct InstrJmp {
+    uint16_t off;
+};
+
+const size_t kInstructionSize = 4;
+
 using Instr = std::variant<
     InstrLoadSlot,
     InstrLoadConst,
     InstrAdd,
     InstrEq,
-    InstrFillEmpty
+    InstrFillEmpty,
+    InstrTestEq,
+    InstrJmp
     >;
-
-struct ByteCodeLogical {
-    std::vector<Instr> instructions;
-};
 
 enum InstrCode : char {
     kLoadSlot,
@@ -104,6 +118,8 @@ enum InstrCode : char {
     kAdd,
     kEq,
     kFillEmpty,
+    kTestEq,
+    kJmp,
 };
 
 struct ExecInstructions {
@@ -115,17 +131,21 @@ struct ExecInstructions {
         instructions.push_back(InstrCode::kLoadConst);
         instructions.push_back(instr.dst);
 
+        // TODO: This should look up whether we already have the constant anywhere.
         constants.push_back(instr.constVal);
         
         auto* addr = allocateSpace(sizeof(uint16_t));
         const uint16_t offset16 = uint16_t(constants.size() - 1);
         writeToMemory<uint16_t>(addr, offset16);
+
+        assert(instructions.size() % 4 == 0);
     }
     void append(InstrAdd instr) {
         instructions.push_back(InstrCode::kAdd);
         instructions.push_back(instr.dst);
         instructions.push_back(instr.left);
         instructions.push_back(instr.right);
+        assert(instructions.size() % 4 == 0);
     }
     void append(InstrEq instr) {
         instructions.push_back(InstrCode::kEq);
@@ -139,8 +159,21 @@ struct ExecInstructions {
         instructions.push_back(instr.left);
         instructions.push_back(instr.right);
     }
+    void append(InstrTestEq instr) {
+        instructions.push_back(InstrCode::kTestEq);
+        instructions.push_back(instr.left);
+        instructions.push_back(instr.right);
+        instructions.push_back(0); // padding
+    }
+    void append(InstrJmp instr) {
+        instructions.push_back(InstrCode::kJmp);
+        instructions.push_back(0); // padding
+        auto* addr = allocateSpace(sizeof(uint16_t));
+        writeToMemory<uint16_t>(addr, instr.off);
 
-
+        assert(instructions.size() % 4 == 0);
+    }
+    
     
     char* allocateSpace(size_t size) {
         auto oldSize = instructions.size();
@@ -170,7 +203,6 @@ struct Runtime {
         assert(instructions.size() % 4 == 0);
     }
 
-    
     void run() {
         // TODO: Should maybe put 'base' in a local variable? Check asm output.
         stack.resize(base + currentFunction.maxStackSize);
@@ -182,6 +214,9 @@ struct Runtime {
             assert(eip < end);
             InstrCode instrCode = *(InstrCode*)eip;
             ++eip;
+
+            // TODO: Increment eip by 4?
+            
             switch(instrCode) {
             case kLoadConst: {
                 auto regId = *eip;
@@ -191,7 +226,7 @@ struct Runtime {
                 eip += sizeof(uint16_t);
                 
                 stack[base + regId] = stack[constId];
-                break;
+                continue;
             }
             case kAdd: {
                 auto dstReg = *eip;
@@ -208,7 +243,7 @@ struct Runtime {
                     stack[base + dstReg].val =
                         stack[base + leftReg].val + stack[base + rightReg].val;
                 }
-                break;
+                continue;
             }
             case kFillEmpty: {
                 auto dstReg = *eip;
@@ -222,7 +257,7 @@ struct Runtime {
                 } else {
                     stack[base + dstReg] = stack[base + valReg];
                 }
-                break;
+                continue;
             }
             case kLoadSlot: {
                 std::cout << "load slot " << (void*)eip << std::endl;
@@ -232,7 +267,42 @@ struct Runtime {
                 assert(0);
                 break;
             }
+            case kJmp: {
+                eip++; // Skip padding
+                auto offId = readFromMemory<uint16_t>(eip);
+                eip += sizeof(uint16_t);
+                eip += offId;
+                continue;
             }
+            case kTestEq: {
+                auto l = *eip;
+                eip++;
+                auto r = *eip;
+                eip++;
+                // Skip padding.
+                eip++;
+
+                if (stack[base + l] == stack[base + r]) {
+                    std::cout << "jumping inline\n";
+                    // Execute the following jmp instruction right here.
+                    assert(*eip == kJmp);
+                    eip++;
+                    eip++; // Skip padding
+
+                    auto offId = readFromMemory<uint16_t>(eip);
+                    eip += sizeof(uint16_t);
+
+                    eip += offId;
+                } else {
+                    std::cout << "skipping jump\n";
+                    eip += 4;
+                }
+                continue;
+            }
+            }
+
+            // Should never get here, because of uses of continue in above loop.
+            assert(0);
         }
     }
 
@@ -247,13 +317,18 @@ struct Runtime {
     size_t base;
 };
 
+
+
 int main() {
     ExecInstructions execInstructions;
     execInstructions.append(InstrLoadConst{Register(0), makeInt(123)});
-    execInstructions.append(InstrLoadConst{Register(1), makeInt(456)});
+    execInstructions.append(InstrLoadConst{Register(1), makeInt(123)});
     execInstructions.append(InstrLoadConst{Register(2), makeBool(false)});
+    execInstructions.append(InstrTestEq{Register(0), Register(1)});
+    execInstructions.append(InstrJmp{4});
     execInstructions.append(InstrAdd{Register(0), Register(0), Register(1)});
-    execInstructions.append(InstrFillEmpty{Register(0), Register(0), Register(2)});
+    execInstructions.append(InstrAdd{Register(0), Register(0), Register(0)});
+    //execInstructions.append(InstrFillEmpty{Register(0), Register(0), Register(2)});
 
     Function fnInfo{3};
     Runtime rt(
@@ -263,7 +338,7 @@ int main() {
         );
 
     rt.run();
-    std::cout << rt.result().val << std::endl;
+    std::cout << (int)rt.result().tag << " " << rt.result().val << std::endl;
     
     return 0;
 }
