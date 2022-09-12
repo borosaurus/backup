@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include "value.h"
 #include "instructions.h"
 
@@ -13,6 +15,8 @@ struct CompileCtx {
     TempId nextId() {
         return tempId++;
     }
+
+    std::map<std::string, TempId> varIds;
 };
 
 struct CompilationResult {
@@ -96,5 +100,55 @@ struct ExpressionAdd : public Expression {
     std::unique_ptr<Expression> right;
 };
 
+struct ExpressionVariable : public Expression {
+    ExpressionVariable(std::string name): name(name) {
+    }
+
+    virtual CompilationResult compile(CompileCtx* ctx) {
+        auto it = ctx->varIds.find(name);
+        assert(it != ctx->varIds.end());
+        CompilationResult res;
+        res.tempId = it->second;
+        return res;
+    }
+
+    std::string name;
+};
+
+struct LetBind {
+    LetBind(std::string n, std::unique_ptr<Expression> e):name(n), expr(std::move(e)) {}
+    
+    std::string name;
+    std::unique_ptr<Expression> expr;
+};
+    
+struct ExpressionLet {
+    ExpressionLet(std::vector<LetBind> bs, std::unique_ptr<Expression> body) :binds(std::move(bs)), body(std::move(body)) {}
+
+    virtual CompilationResult compile(CompileCtx* ctx) {
+        CompilationResult res;
+        // Compile the bindings
+        std::vector<TempId> bindTemps;
+        for (auto& b : binds) {
+            auto bindRes = b.expr->compile(ctx);
+            res.append(bindRes.instructions);
+            bindTemps.push_back(bindRes.tempId);
+            ctx->varIds[b.name] = bindRes.tempId;
+        }
+
+        auto bodyRes = body->compile(ctx);
+        res.append(bodyRes.instructions);
+        res.tempId = bodyRes.tempId;
+
+        for (auto& b : binds) {
+            ctx->varIds.erase(b.name);
+        }
+        
+        return res;
+    }
+    
+    std::vector<LetBind> binds;
+    std::unique_ptr<Expression> body;  
+};
 
 ///

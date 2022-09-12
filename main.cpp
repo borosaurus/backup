@@ -189,12 +189,21 @@ struct Runtime {
 
 int main() {
     {
-        auto c1 = std::make_unique<ExpressionConst>(makeInt(123));
         auto c2 = std::make_unique<ExpressionConst>(makeInt(456));
-        auto add = std::make_unique<ExpressionAdd>(std::move(c1), std::move(c2));
+
+        auto varExpr = std::make_unique<ExpressionVariable>("foo");
+        auto add = std::make_unique<ExpressionAdd>(std::move(varExpr), std::move(c2));
+
+        std::vector<LetBind> binds;
+        binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
+        
+        auto letExpr = std::make_unique<ExpressionLet>(
+            std::move(binds),
+            std::move(add)
+            );
 
         CompileCtx ctx;
-        auto res = add->compile(&ctx);
+        auto res = letExpr->compile(&ctx);
 
         std::cout << res.print();
         std::cout << std::endl << std::endl;
