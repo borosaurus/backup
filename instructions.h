@@ -11,9 +11,9 @@ struct LInstrLoadConst {
     ValTagOwned constVal;
 };
 struct LInstrAdd {
-    TempId dstTmp;
-    TempId leftTmp;
-    TempId rightTmp;
+    TempId dst;
+    TempId left;
+    TempId right;
 };
 struct LInstrTestEq {
     TempId left;
@@ -28,9 +28,7 @@ struct LInstrLabel {
 
 using LInstr = std::variant<
     LInstrLoadConst,
-    LInstrAdd,
-    LInstrTestEq,
-    LInstrJmp
+    LInstrAdd
     >;
 
 // After register allocation

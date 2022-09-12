@@ -7,26 +7,6 @@
 #include "expression.h"
 #include "instructions.h"
 
-template <class... Ts>
-struct Overloaded : Ts... {
-    using Ts::operator()...;
-};
-template <class... Ts>
-Overloaded(Ts...)->Overloaded<Ts...>;
-
-template <typename T>
-T readFromMemory(const char* ptr) noexcept {
-    T val;
-    memcpy(&val, ptr, sizeof(T));
-    return val;
-}
-
-template <typename T>
-size_t writeToMemory(char* ptr, const T val) noexcept {
-    memcpy(ptr, &val, sizeof(T));
-    return sizeof(T);
-}
-
 enum InstrCode : char {
     kLoadConst,
     kAdd,
@@ -208,6 +188,19 @@ struct Runtime {
 
 
 int main() {
+    {
+        auto c1 = std::make_unique<ExpressionConst>(makeInt(123));
+        auto c2 = std::make_unique<ExpressionConst>(makeInt(456));
+        auto add = std::make_unique<ExpressionAdd>(std::move(c1), std::move(c2));
+
+        CompileCtx ctx;
+        auto res = add->compile(&ctx);
+
+        std::cout << res.print();
+        std::cout << std::endl << std::endl;
+    }
+
+    
     ExecInstructions execInstructions;
     execInstructions.append(InstrLoadConst{Register(0), makeInt(123)});
     execInstructions.append(InstrLoadConst{Register(1), makeInt(123)});

@@ -5,6 +5,26 @@
 #include <math.h>
 #include <vector>
 
+template <class... Ts>
+struct Overloaded : Ts... {
+    using Ts::operator()...;
+};
+template <class... Ts>
+Overloaded(Ts...)->Overloaded<Ts...>;
+
+template <typename T>
+T readFromMemory(const char* ptr) noexcept {
+    T val;
+    memcpy(&val, ptr, sizeof(T));
+    return val;
+}
+
+template <typename T>
+size_t writeToMemory(char* ptr, const T val) noexcept {
+    memcpy(ptr, &val, sizeof(T));
+    return sizeof(T);
+}
+
 
 
 

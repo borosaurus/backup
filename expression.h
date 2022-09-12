@@ -24,6 +24,32 @@ struct CompilationResult {
                             moreInstructions.begin(),
                             moreInstructions.end());
     }
+
+    std::string tmpStr(TempId id) {
+        return "T" + std::to_string(id);
+    }
+
+    std::string print() {
+        std::string out;
+
+        out += "Result at T" + std::to_string(tempId) + "\n";
+        for (auto& instr: instructions) {
+            std::visit(Overloaded{
+                    [&](LInstrLoadConst lc) {
+                        out += "loadc   " + tmpStr(lc.dst) + " " +
+                            std::to_string(lc.constVal.tag) + ", " + std::to_string(lc.constVal.val);
+                    },
+                    [&](LInstrAdd a) {
+                        out += "add     " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
+                            tmpStr(a.right);
+                    }
+                },
+                instr);
+
+            out += "\n";
+        }
+        return out;
+    }
 };
 
 
