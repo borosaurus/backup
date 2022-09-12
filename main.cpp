@@ -28,7 +28,6 @@ size_t writeToMemory(char* ptr, const T val) noexcept {
 }
 
 enum InstrCode : char {
-    kLoadSlot,
     kLoadConst,
     kAdd,
     kEq,
@@ -38,10 +37,6 @@ enum InstrCode : char {
 };
 
 struct ExecInstructions {
-    void append(InstrLoadSlot instr) {
-        assert(0);
-    }
-
     void append(InstrLoadConst instr) {
         instructions.push_back(InstrCode::kLoadConst);
         instructions.push_back(instr.dst);
@@ -163,10 +158,6 @@ struct Runtime {
                     stackBase[dstReg] = stackBase[valReg];
                 }
                 continue;
-            }
-            case kLoadSlot: {
-                std::cout << "load slot " << (void*)eip << std::endl;
-                break;
             }
             case kEq: {
                 assert(0);

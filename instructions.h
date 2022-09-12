@@ -5,24 +5,42 @@
 #include <math.h>
 #include <vector>
 
-using TempId = uint32_t; // SSA temporary form
+using TempId = uint32_t;
+struct LInstrLoadConst {
+    TempId dst;
+    ValTagOwned constVal;
+};
+struct LInstrAdd {
+    TempId dstTmp;
+    TempId leftTmp;
+    TempId rightTmp;
+};
+struct LInstrTestEq {
+    TempId left;
+    TempId right;
+};
+struct LInstrJmp {
+    std::string labelName;
+};
+struct LInstrLabel {
+    std::string name;
+};
+
+using LInstr = std::variant<
+    LInstrLoadConst,
+    LInstrAdd,
+    LInstrTestEq,
+    LInstrJmp
+    >;
 
 // After register allocation
 using Register = uint8_t;
 
-struct InstrLoadSlot {
-    Register reg;
-    uint8_t slotNum; // TODO: Could support larger size here
-};
 struct InstrLoadConst {
     Register dst;
     ValTagOwned constVal;
 };
 struct InstrAdd {
-    // TempId dstTmp;
-    // TempId leftTmp;
-    // TempId rightTmp;
-    
     Register dst;
     Register left;
     Register right;
@@ -52,7 +70,6 @@ struct InstrJmp {
 const size_t kInstructionSize = 4;
 
 using Instr = std::variant<
-    InstrLoadSlot,
     InstrLoadConst,
     InstrAdd,
     InstrEq,
