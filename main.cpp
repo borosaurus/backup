@@ -207,55 +207,45 @@ struct Runtime {
         // TODO: Should maybe put 'base' in a local variable? Check asm output.
         stack.resize(base + currentFunction.maxStackSize);
 
-        const char* eip = instructions.data();
+        const char* eip = instructions.data() - kInstructionSize;
         const char* end = instructions.data() + instructions.size();
-        while (eip != end) {
+        auto* stackBase = &stack[base];
+        while (true) {
+            eip += kInstructionSize;
+            if (eip == end) {
+                break;
+            }
             assert(uintptr_t(eip - instructions.data()) % 4 == 0);
             assert(eip < end);
             InstrCode instrCode = *(InstrCode*)eip;
-            ++eip;
-
-            // TODO: Increment eip by 4?
-            
             switch(instrCode) {
             case kLoadConst: {
-                auto regId = *eip;
-                ++eip;
-
-                auto constId = readFromMemory<uint16_t>(eip);
-                eip += sizeof(uint16_t);
-                
-                stack[base + regId] = stack[constId];
+                auto regId = *(eip + 1);
+                auto constId = readFromMemory<uint16_t>(eip + 2);
+                stackBase[regId] = stack[constId];
                 continue;
             }
             case kAdd: {
-                auto dstReg = *eip;
-                eip++;
-                auto leftReg = *eip;
-                eip++;
-                auto rightReg = *eip;
-                eip++;
-
-                if (stack[base + leftReg].tag == kTagNothing ||
-                    stack[base + rightReg].tag == kTagNothing) {
-                    stack[base + dstReg] = makeNothing();
+                auto dstReg = *(eip + 1);
+                auto leftReg = *(eip + 2);
+                auto rightReg = *(eip + 3);
+                if (stackBase[leftReg].tag == kTagNothing ||
+                    stackBase[rightReg].tag == kTagNothing) {
+                    stackBase[dstReg] = makeNothing();
                 } else {
-                    stack[base + dstReg].val =
-                        stack[base + leftReg].val + stack[base + rightReg].val;
+                    stackBase[dstReg].val =
+                        stackBase[leftReg].val + stackBase[rightReg].val;
                 }
                 continue;
             }
             case kFillEmpty: {
-                auto dstReg = *eip;
-                eip++;
-                auto valReg = *eip;
-                eip++;
-                auto rightReg = *eip;
-                eip++;
-                if (stack[base + valReg].tag == kTagNothing) {
-                    stack[base + dstReg] = stack[base + rightReg];
+                auto dstReg = *(eip + 1);
+                auto valReg = *(eip + 2);
+                auto rightReg = *(eip + 3);
+                if (stackBase[valReg].tag == kTagNothing) {
+                    stackBase[dstReg] = stackBase[rightReg];
                 } else {
-                    stack[base + dstReg] = stack[base + valReg];
+                    stackBase[dstReg] = stackBase[valReg];
                 }
                 continue;
             }
@@ -268,34 +258,26 @@ struct Runtime {
                 break;
             }
             case kJmp: {
-                eip++; // Skip padding
-                auto offId = readFromMemory<uint16_t>(eip);
-                eip += sizeof(uint16_t);
+                auto offId = readFromMemory<uint16_t>(eip + 2 /* skip padding */);
                 eip += offId;
                 continue;
             }
             case kTestEq: {
-                auto l = *eip;
-                eip++;
-                auto r = *eip;
-                eip++;
-                // Skip padding.
-                eip++;
-
-                if (stack[base + l] == stack[base + r]) {
+                auto l = *(eip + 1);
+                auto r = *(eip + 2);
+                if (stackBase[l] == stackBase[r]) {
+                    eip += kInstructionSize;
+                    
                     std::cout << "jumping inline\n";
                     // Execute the following jmp instruction right here.
                     assert(*eip == kJmp);
-                    eip++;
-                    eip++; // Skip padding
-
-                    auto offId = readFromMemory<uint16_t>(eip);
-                    eip += sizeof(uint16_t);
+                    auto offId = readFromMemory<uint16_t>(eip + 2);
+                    std::cout << "jumping by " << offId << std::endl;
 
                     eip += offId;
                 } else {
                     std::cout << "skipping jump\n";
-                    eip += 4;
+                    eip += kInstructionSize;
                 }
                 continue;
             }
