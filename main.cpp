@@ -187,8 +187,11 @@ struct Runtime {
 };
 
 
-void runFull(Expression* expr) {
+void runFull(OwnedExpression expr) {
+    std::cout << "RUNNING\n";
     CompileCtx ctx;
+    expr = expr->optimize(std::move(expr));
+
     auto res = expr->compile(&ctx);
 
     std::cout << res.print() << std::endl;
@@ -211,14 +214,6 @@ void runFull(Expression* expr) {
 
 int main() {
     {
-        auto andExpr = std::make_unique<ExpressionBinOp>(
-            BinOpType::kAnd,
-            makeConstInt(2),
-            makeConstInt(3));
-        runFull(andExpr.get());
-    }
-    
-    {
         auto iff = std::make_unique<ExpressionIf>(
             std::make_unique<ExpressionVariable>("foo"),
             std::make_unique<ExpressionBinOp>(
@@ -236,7 +231,19 @@ int main() {
             std::move(iff)
             );
 
-        runFull(letExpr.get());
+        runFull(std::move(letExpr));
+    }
+
+    {
+        auto andExpr = std::make_unique<ExpressionBinOp>(
+            BinOpType::kAnd,
+            std::make_unique<ExpressionBinOp>(
+                BinOpType::kAnd,
+                makeConstInt(1),
+                makeConstInt(2)),
+            makeConstInt(3));
+        
+        runFull(std::move(andExpr));
     }
 
     ExecInstructions execInstructions;

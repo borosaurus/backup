@@ -25,11 +25,18 @@ struct CompileCtx {
 };
 
 // Expression
+struct Expression;
+using OwnedExpression = std::unique_ptr<Expression>;
 struct Expression {
     virtual CompilationResult compile(CompileCtx*) = 0;
+    virtual OwnedExpression optimize(OwnedExpression self) {
+        return self;
+    }
+    // virtual std::string print() const = 0;
     virtual ~Expression() {
     }
 };
+
 
 struct ExpressionConst : public Expression {
     ExpressionConst(ValTagOwned c): constVal(c) {}
@@ -38,6 +45,9 @@ struct ExpressionConst : public Expression {
         auto id = ctx->nextId();
         return {id, {LInstrLoadConst{id, constVal}}};
     }
+    // virtual std::string print() const {
+    //     return "Const(" + std::to_string(constVal.tag) + ", " + std::to_string(constVal.val) + ")";
+    // }
 
     ValTagOwned constVal;
 };
@@ -50,11 +60,90 @@ enum class BinOpType {
     kAnd
 };
 
+struct ExpressionNOp : public Expression {
+    ExpressionNOp(BinOpType t, std::vector<std::unique_ptr<Expression>> ins)
+        :type(t),
+         ins(std::move(ins))
+    {}
+
+    std::unique_ptr<Expression> optimize(OwnedExpression self) {
+        if (type == BinOpType::kAnd) {
+            std::vector<OwnedExpression> newIns;
+            for (auto& c : ins) {
+                if (auto* ptr = dynamic_cast<ExpressionNOp*>(c.get()); ptr && ptr->type == type) {
+                    for (auto& node : ptr->ins) {
+                        newIns.push_back(std::move(node));
+                    }
+                } else {
+                    newIns.push_back(std::move(c));
+                }
+            }
+
+            ins = std::move(newIns);
+        }
+        return self;
+    }
+
+    virtual CompilationResult compile(CompileCtx* ctx) {
+        auto id = ctx->nextId();
+        CompilationResult res{id};
+        if (type == BinOpType::kAnd) {
+            auto endLabel = ctx->nextLabel();
+
+            std::vector<TempId> tempIds;
+            for (size_t i = 0; i < ins.size() - 1; ++i) {
+                auto exprRes = ins[i]->compile(ctx);
+                res.append(exprRes.instructions);
+
+                // If it's nothing, we jump to the end.
+                res.instructions.push_back(LInstrTestNothing{exprRes.tempId});
+                res.instructions.push_back(LInstrJmp{endLabel});
+
+                // If it's falsey, we jump to the end.
+                res.instructions.push_back(LInstrTestFalsey{exprRes.tempId});
+                res.instructions.push_back(LInstrJmp{endLabel});
+
+                // Otherwise we evaluate the next one.
+                tempIds.push_back(exprRes.tempId);
+            }
+
+            // Evaluate the last one. For this, there's no need to jump.
+            auto lastRes = ins.back()->compile(ctx);
+            res.append(lastRes.instructions);
+            tempIds.push_back(lastRes.tempId);
+
+            res.instructions.push_back(LInstrLabel{endLabel});
+            // Phi function
+            res.instructions.push_back(LInstrMovePhi{id, tempIds});
+            return res;
+        } else {
+            assert(0);
+        }
+    }
+
+    BinOpType type;
+    std::vector<std::unique_ptr<Expression>> ins;
+};
+
 struct ExpressionBinOp : public Expression {
     ExpressionBinOp(BinOpType t, std::unique_ptr<Expression> l, std::unique_ptr<Expression> r):
         type(t),
         left(std::move(l)),
         right(std::move(r)){
+    }
+
+    std::unique_ptr<Expression> optimize(OwnedExpression self) {
+        left = left->optimize(std::move(left));
+        right = right->optimize(std::move(right));
+
+        if (type == BinOpType::kAnd) {
+            std::vector<std::unique_ptr<Expression>> children;
+            children.push_back(std::move(left));
+            children.push_back(std::move(right));
+            auto res = std::make_unique<ExpressionNOp>(type, std::move(children));
+            return res->optimize(std::move(res));
+        }
+        return self;
     }
 
     virtual CompilationResult compile(CompileCtx* ctx) {
@@ -65,7 +154,6 @@ struct ExpressionBinOp : public Expression {
         auto rightRes = right->compile(ctx);
         
         if (type == BinOpType::kAnd) {
-            auto rightSideLabel = ctx->nextLabel();
             auto endLabel = ctx->nextLabel();
 
             // Evaluate the left side
@@ -74,14 +162,11 @@ struct ExpressionBinOp : public Expression {
             res.instructions.push_back(LInstrTestNothing{leftRes.tempId});
             res.instructions.push_back(LInstrJmp{endLabel});
 
-            // If the left side is truthy, we evaluate the right side.
-            res.instructions.push_back(LInstrTestTruthy{leftRes.tempId});
-            res.instructions.push_back(LInstrJmp{rightSideLabel});
-
-            // If it's falsey, we jump to the end.
+            // If the left side is falsey, we jump to the end.
+            res.instructions.push_back(LInstrTestFalsey{leftRes.tempId});
             res.instructions.push_back(LInstrJmp{endLabel});
 
-            res.instructions.push_back(LInstrLabel{rightSideLabel});
+            // Otherwise evaluate the right side.
             res.append(rightRes.instructions);
             res.instructions.push_back(LInstrLabel{endLabel});
 
@@ -120,6 +205,9 @@ struct ExpressionVariable : public Expression {
 
     std::string name;
 };
+std::unique_ptr<ExpressionVariable> makeVariable(std::string s) {
+    return std::make_unique<ExpressionVariable>(s);
+}
 
 struct LetBind {
     LetBind(std::string n, std::unique_ptr<Expression> e):name(n), expr(std::move(e)) {}
