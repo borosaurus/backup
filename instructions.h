@@ -6,6 +6,12 @@
 #include <vector>
 
 using TempId = uint32_t;
+std::string tmpStr(TempId id) {
+    return "T" + std::to_string(id);
+}
+
+
+
 struct LInstrLoadConst {
     TempId dst;
     ValTagOwned constVal;
@@ -16,8 +22,7 @@ struct LInstrMove {
 };
 struct LInstrMovePhi {
     TempId dst;
-    TempId srcA;
-    TempId srcB;
+    std::vector<TempId> sources;
 };
 struct LInstrAdd {
     TempId dst;
@@ -29,6 +34,12 @@ struct LInstrTestEq {
     TempId right;
 };
 struct LInstrTestTruthy {
+    TempId reg;
+};
+struct LInstrTestFalsey {
+    TempId reg;
+};
+struct LInstrTestNothing {
     TempId reg;
 };
 struct LInstrJmp {
@@ -43,6 +54,8 @@ using LInstr = std::variant<
     LInstrAdd,
     LInstrLabel,
     LInstrTestTruthy,
+    LInstrTestFalsey,
+    LInstrTestNothing,
     LInstrMove,
     LInstrMovePhi,
     LInstrJmp
@@ -56,10 +69,6 @@ struct CompilationResult {
         instructions.insert(instructions.end(),
                             moreInstructions.begin(),
                             moreInstructions.end());
-    }
-
-    std::string tmpStr(TempId id) {
-        return "T" + std::to_string(id);
     }
 
     std::string print() {
@@ -83,14 +92,24 @@ struct CompilationResult {
                         out += "mov     " + tmpStr(m.dst) + " " + tmpStr(m.src);
                     },
                     [&](LInstrMovePhi m) {
-                        out += "mov     " + tmpStr(m.dst) + " phi(" +
-                            tmpStr(m.srcA) + ", " + tmpStr(m.srcB) + ")";
+                        out += "mov     " + tmpStr(m.dst) + " phi(";
+                        for (auto& t : m.sources) {
+                            out += tmpStr(t) + ", ";
+                        }
+                        out.erase(out.begin() + out.size() - 2, out.end());
+                        out += ")";
                     },
                     [&](LInstrLabel l) {
                         out += l.name + ":";
                     },
                     [&](LInstrTestTruthy t) {
                         out += "testt   " + tmpStr(t.reg);
+                    },
+                    [&](LInstrTestFalsey t) {
+                        out += "testf   " + tmpStr(t.reg);
+                    },
+                    [&](LInstrTestNothing t) {
+                        out += "testn   " + tmpStr(t.reg);
                     }
                 },
                 instr);

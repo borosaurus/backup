@@ -45,28 +45,63 @@ std::unique_ptr<ExpressionConst> makeConstInt(int val) {
     return std::make_unique<ExpressionConst>(ValTagOwned{Value(val), kTagInt, false});
 }
 
+enum class BinOpType {
+    kAdd,
+    kAnd
+};
 
-struct ExpressionAdd : public Expression {
-    ExpressionAdd(std::unique_ptr<Expression> l, std::unique_ptr<Expression> r):
+struct ExpressionBinOp : public Expression {
+    ExpressionBinOp(BinOpType t, std::unique_ptr<Expression> l, std::unique_ptr<Expression> r):
+        type(t),
         left(std::move(l)),
         right(std::move(r)){
     }
 
     virtual CompilationResult compile(CompileCtx* ctx) {
         auto id = ctx->nextId();
-
         CompilationResult res{id};
+
         auto leftRes = left->compile(ctx);
         auto rightRes = right->compile(ctx);
+        
+        if (type == BinOpType::kAnd) {
+            auto rightSideLabel = ctx->nextLabel();
+            auto endLabel = ctx->nextLabel();
 
-        res.append(leftRes.instructions);
-        res.append(rightRes.instructions);
+            // Evaluate the left side
+            res.append(leftRes.instructions);
+            // If the value from the left side is nothing, the whole expression evaluates to nothing.
+            res.instructions.push_back(LInstrTestNothing{leftRes.tempId});
+            res.instructions.push_back(LInstrJmp{endLabel});
 
-        res.instructions.push_back(LInstrAdd{id, leftRes.tempId, rightRes.tempId});
+            // If the left side is truthy, we evaluate the right side.
+            res.instructions.push_back(LInstrTestTruthy{leftRes.tempId});
+            res.instructions.push_back(LInstrJmp{rightSideLabel});
+
+            // If it's falsey, we jump to the end.
+            res.instructions.push_back(LInstrJmp{endLabel});
+
+            res.instructions.push_back(LInstrLabel{rightSideLabel});
+            res.append(rightRes.instructions);
+            res.instructions.push_back(LInstrLabel{endLabel});
+
+            // Phi function
+            res.instructions.push_back(LInstrMovePhi{id,
+                    {leftRes.tempId, /* If the left result is nothing or false */
+                     rightRes.tempId}});
+        } else if (type == BinOpType::kAdd) {
+            res.append(leftRes.instructions);
+            res.append(rightRes.instructions);
+
+            res.instructions.push_back(LInstrAdd{id, leftRes.tempId, rightRes.tempId});
+        } else {
+            assert(0);
+        }
 
         return res;
     }
 
+    BinOpType type;
     std::unique_ptr<Expression> left;
     std::unique_ptr<Expression> right;
 };
@@ -142,6 +177,8 @@ struct ExpressionIf : public Expression {
         auto endLabel = ctx->nextLabel();
 
         // If the condition evaluates to nothing, we jump past the whole thing.
+        res.instructions.push_back(LInstrTestNothing{condRes.tempId});
+        res.instructions.push_back(LInstrJmp{endLabel});
 
         res.instructions.push_back(LInstrTestTruthy{condRes.tempId});
         res.instructions.push_back(LInstrJmp{trueLabel});
@@ -157,7 +194,9 @@ struct ExpressionIf : public Expression {
         res.append(thenRes.instructions);
         //res.instructions.push_back(LInstrMove{id, thenRes.tempId});
         res.instructions.push_back(LInstrLabel{endLabel});
-        res.instructions.push_back(LInstrMovePhi{id, elseRes.tempId, thenRes.tempId});
+        res.instructions.push_back(LInstrMovePhi{id, {condRes.tempId, /* if its nothing */
+                                                          elseRes.tempId,
+                                                          thenRes.tempId}});
 
         return res;
     }

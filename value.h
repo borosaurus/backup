@@ -4,6 +4,7 @@
 #include <variant>
 #include <math.h>
 #include <vector>
+#include <optional>
 
 template <class... Ts>
 struct Overloaded : Ts... {
@@ -25,7 +26,13 @@ size_t writeToMemory(char* ptr, const T val) noexcept {
     return sizeof(T);
 }
 
-
+template<class T, class V>
+std::optional<T> getAlternative(V&& v) {
+    if (std::holds_alternative<T>(v)) {
+        return std::get<T>(v);
+    }
+    return {};
+}
 
 
 using Value = uint64_t;

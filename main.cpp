@@ -187,13 +187,43 @@ struct Runtime {
 };
 
 
+void runFull(Expression* expr) {
+    CompileCtx ctx;
+    auto res = expr->compile(&ctx);
+
+    std::cout << res.print() << std::endl;
+
+    std::cout << "SSA pass\n";
+    OptimizationCtx optCtx;
+    optimizePreSSA(&optCtx, &res);
+    std::cout << res.print() << std::endl;
+
+    std::cout << "Removing phi...\n";
+    removePhi(&res);
+    std::cout << res.print() << std::endl;
+
+    std::cout << "Post SSA optimizations...\n";
+    optimizePostSSA(&optCtx, &res);
+    std::cout << res.print() << std::endl;
+        
+    std::cout << std::endl << std::endl;
+}
 
 int main() {
     {
+        auto andExpr = std::make_unique<ExpressionBinOp>(
+            BinOpType::kAnd,
+            makeConstInt(2),
+            makeConstInt(3));
+        runFull(andExpr.get());
+    }
+    
+    {
         auto iff = std::make_unique<ExpressionIf>(
             std::make_unique<ExpressionVariable>("foo"),
-            std::make_unique<ExpressionAdd>(
-                makeConstInt(1),
+            std::make_unique<ExpressionBinOp>(
+                BinOpType::kAdd,
+                std::make_unique<ExpressionVariable>("foo"),
                 makeConstInt(2)),
             makeConstInt(0)
             );
@@ -206,43 +236,9 @@ int main() {
             std::move(iff)
             );
 
-        CompileCtx ctx;
-        auto res = letExpr->compile(&ctx);
-
-        std::cout << res.print() << std::endl;
-
-        std::cout << "Removing phi...\n";
-        removePhi(&res);
-        std::cout << res.print() << std::endl;
-
-        std::cout << "Post SSA optimizations...\n";
-        OptimizationCtx optCtx;
-        optimizePostSSA(&optCtx, &res);
-        std::cout << res.print() << std::endl;
-        
-        std::cout << std::endl << std::endl;
+        runFull(letExpr.get());
     }
 
-    {
-        auto c2 = std::make_unique<ExpressionConst>(makeInt(456));
-        auto varExpr = std::make_unique<ExpressionVariable>("foo");
-        auto add = std::make_unique<ExpressionAdd>(std::move(varExpr), std::move(c2));
-        
-        std::vector<LetBind> binds;
-        binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
-
-        
-        auto letExpr = std::make_unique<ExpressionLet>(
-            std::move(binds),
-            std::move(add)
-            );
-
-        CompileCtx ctx;
-        auto res = letExpr->compile(&ctx);
-        std::cout << res.print() << std::endl;        
-    }
-
-    
     ExecInstructions execInstructions;
     execInstructions.append(InstrLoadConst{Register(0), makeInt(123)});
     execInstructions.append(InstrLoadConst{Register(1), makeInt(123)});
