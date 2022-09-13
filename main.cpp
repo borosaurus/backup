@@ -192,8 +192,11 @@ int main() {
     {
         auto iff = std::make_unique<ExpressionIf>(
             std::make_unique<ExpressionVariable>("foo"),
-            std::make_unique<ExpressionConst>(makeInt(1)),
-            std::make_unique<ExpressionConst>(makeInt(0)));
+            std::make_unique<ExpressionAdd>(
+                makeConstInt(1),
+                makeConstInt(2)),
+            makeConstInt(0)
+            );
             
         std::vector<LetBind> binds;
         binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
@@ -210,6 +213,11 @@ int main() {
 
         std::cout << "Removing phi...\n";
         removePhi(&res);
+        std::cout << res.print() << std::endl;
+
+        std::cout << "Post SSA optimizations...\n";
+        OptimizationCtx optCtx;
+        optimizePostSSA(&optCtx, &res);
         std::cout << res.print() << std::endl;
         
         std::cout << std::endl << std::endl;

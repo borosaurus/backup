@@ -41,6 +41,10 @@ struct ExpressionConst : public Expression {
 
     ValTagOwned constVal;
 };
+std::unique_ptr<ExpressionConst> makeConstInt(int val) {
+    return std::make_unique<ExpressionConst>(ValTagOwned{Value(val), kTagInt, false});
+}
+
 
 struct ExpressionAdd : public Expression {
     ExpressionAdd(std::unique_ptr<Expression> l, std::unique_ptr<Expression> r):
@@ -136,6 +140,8 @@ struct ExpressionIf : public Expression {
 
         auto trueLabel = ctx->nextLabel();
         auto endLabel = ctx->nextLabel();
+
+        // If the condition evaluates to nothing, we jump past the whole thing.
 
         res.instructions.push_back(LInstrTestTruthy{condRes.tempId});
         res.instructions.push_back(LInstrJmp{trueLabel});

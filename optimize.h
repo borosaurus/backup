@@ -2,7 +2,7 @@
 
 #include "instructions.h"
 
-struct OptimizationContext {
+struct OptimizationCtx {
 };
 
 
@@ -44,15 +44,59 @@ size_t findDefinition(CompilationResult* r, TempId id) {
     return -1;
 }
 
+void replaceTemp(CompilationResult* r, TempId oldTemp, TempId newTemp) {
+    for (auto& instr : r->instructions) {
+        std::visit(
+            Overloaded{
+                [&](LInstrLoadConst& lc) {
+                    if (lc.dst == oldTemp) {
+                        lc.dst = newTemp;
+                    }
+                },
+                [&](LInstrAdd& a) {
+                    if (a.dst == oldTemp) {
+                        a.dst = newTemp;
+                    }
+                    if (a.left == oldTemp) {
+                        a.left = newTemp;
+                    }
+                    if (a.right == oldTemp) {
+                        a.right = newTemp;
+                    }
+                },
+                [&](LInstrJmp& j) {
+                },
+                [&](LInstrMove& m) {
+                    if (m.dst == oldTemp) {
+                        m.dst = newTemp;
+                    }
+                    if (m.src == oldTemp) {
+                        m.src = newTemp;
+                    }
+                },
+                [&](LInstrMovePhi& m) {
+                    assert(0);
+                },
+                [&](LInstrLabel& l) {
+                },
+                [&](LInstrTestTruthy& t) {
+                    if (t.reg == oldTemp) {
+                        t.reg = newTemp;
+                    }
+                }
+            },
+            instr);
+    }
+}
+
 void removePhi(CompilationResult* r) {
     auto it = r->instructions.begin();
 
     while (it != r->instructions.end()) {
         auto instr = *it;
-        
         if (std::holds_alternative<LInstrMovePhi>(instr)) {
             // Remove the phi instruction.
-            it = r->instructions.erase(it);
+            r->instructions.erase(it);
 
             auto phiInstr = std::get<LInstrMovePhi>(instr);
 
@@ -63,6 +107,10 @@ void removePhi(CompilationResult* r) {
             auto srcBOffset = findDefinition(r, phiInstr.srcB);
             r->instructions.insert(r->instructions.begin() + srcBOffset + 1,
                                    LInstrMove{phiInstr.dst, phiInstr.srcB});
+
+            // Iterator is invalidated now, just go to the beginning. Not efficient,
+            // but who cares?
+            it = r->instructions.begin();
         } else {
             ++it;
         }
@@ -70,72 +118,54 @@ void removePhi(CompilationResult* r) {
 }
 
 struct OptimizationPass {
-    virtual bool run(OptimizationContext* ctx, CompilationResult* r) = 0;
+    virtual bool run(OptimizationCtx* ctx, CompilationResult* r) = 0;
+    virtual ~OptimizationPass() = default;
 };
 
 struct BasicCopyPropPass : public OptimizationPass {
-    
-    
-    bool run(OptimizationContext* ctx, CompilationResult* r) {
+    bool run(OptimizationCtx* ctx, CompilationResult* r) {
         auto it = r->instructions.begin();
         while (it != r->instructions.end()) {
             auto instr = *it;
         
             if (std::holds_alternative<LInstrMove>(instr)) {
                 auto moveInstr = std::get<LInstrMove>(instr);
-                
-                bool canApply = false;
-                // See if we can find the source definition near here.
-                for (auto rit = std::make_reverse_iterator(it);
-                     rit != r->instructions.rend();
-                     ++rit) {
+                auto srcDefinition = findDefinition(r, moveInstr.src);
 
-                    // If we see a jump or something, we have to give up.
-                    bool giveUp = std::visit(
-                        Overloaded{
-                            [&](LInstrLoadConst lc) {
-                                return false;
-                            },
-                            [&](LInstrAdd a) {
-                                return false;
-                            },
-                            [&](LInstrJmp j) {
-                                return true;
-                            },
-                            [&](LInstrMove m) {
-                                return false;
-                            },
-                            [&](LInstrMovePhi m) {
-                                // Assumes this is run after phi elimination
-                                assert(0);
-                            },
-                            [&](LInstrLabel l) {
-                                return false;
-                            },
-                            [&](LInstrTestTruthy t) {
-                                return false;
-                            }
-                        },
-                        instr);
+                // Is there a jump between the definition and here?
+                auto it2 = r->instructions.begin() + srcDefinition;
 
-                    if (giveUp) {
+                bool foundJump = false;
+                while (it2 != it) {
+                    if (std::holds_alternative<LInstrJmp>(*it2)) {
+                        foundJump = true;
                         break;
                     }
+                    ++it2;
                 }
 
-                if (canApply) {
-                    //...
+                if (!foundJump) {
+                    replaceTemp(r, moveInstr.src, moveInstr.dst);
+                    it = r->instructions.erase(it);
+                } else {
+                    ++it;
                 }
+            } else {
+                ++it;
             }
-
-            ++it;
         }
 
         return false;
     }
 };
 
-void optimizePostSSA(CompilationResult* r) {
+void optimizePostSSA(OptimizationCtx* ctx, CompilationResult* r) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<BasicCopyPropPass>());
+
+    for (auto& p : passes) {
+        p->run(ctx, r);
+    }
     // find move TA, TB instruction. If the definition of TB is available in this block then get rid
     // of the move and use TA everywhere TB is used.
 }
