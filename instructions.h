@@ -170,11 +170,19 @@ std::optional<TempId> getDest(LInstr instr) {
 
 // After register allocation
 using Register = uint8_t;
+std::string regStr(Register r) {
+    return "R" + std::to_string(r);
+}
 
 struct InstrLoadConst {
     Register dst;
     ValTagOwned constVal;
 };
+struct InstrMove {
+    Register dst;
+    Register src;
+};
+
 struct InstrAdd {
     Register dst;
     Register left;
@@ -198,6 +206,14 @@ struct InstrTestEq {
     Register left;
     Register right;
 };
+struct InstrTestTruthy {
+    Register reg;
+};
+struct InstrTestFalsey {
+    Register reg;
+};
+
+
 struct InstrJmp {
     uint16_t off;
 };
@@ -206,9 +222,12 @@ const size_t kInstructionSize = 4;
 
 using Instr = std::variant<
     InstrLoadConst,
+    InstrMove,
     InstrAdd,
     InstrEq,
     InstrFillEmpty,
     InstrTestEq,
+    InstrTestTruthy,
+    InstrTestFalsey,
     InstrJmp
     >;

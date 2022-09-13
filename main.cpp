@@ -31,35 +31,32 @@ void runFull(OwnedExpression expr) {
     std::cout << "Post SSA optimizations...\n";
     optimizePostSSA(&optCtx, &res);
     std::cout << res.print() << std::endl;
-        
+
+    std::cout << "Assembling..\n";
+    auto execInstructions = assemble(&res);
+
+    std::cout << "Assembled to\n";
+    std::cout << execInstructions.print() << std::endl;
+
+    std::cout << "Running\n";
+    Function fnInfo{execInstructions.numRegisters};
+    Runtime rt(
+        fnInfo,
+        std::move(execInstructions.instructions),
+        std::move(execInstructions.constants)
+        );
+
+    rt.run();
+    std::cout << (int)rt.result().tag << " " << rt.result().val << std::endl;
+    
     std::cout << std::endl << std::endl;
 }
 
 int main() {
     {
-        auto iff = std::make_unique<ExpressionIf>(
-            std::make_unique<ExpressionVariable>("foo"),
-            std::make_unique<ExpressionBinOp>(
-                BinOpType::kAdd,
-                std::make_unique<ExpressionVariable>("foo"),
-                makeConstInt(2)),
-            makeConstInt(0)
-            );
-            
         std::vector<LetBind> binds;
         binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
-        
-        auto letExpr = std::make_unique<ExpressionLet>(
-            std::move(binds),
-            std::move(iff)
-            );
-
-        runFull(std::move(letExpr));
-    }
-
-    {
-        std::vector<LetBind> binds;
-        binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
+        binds.push_back(LetBind("bar", std::make_unique<ExpressionConst>(makeInt(456))));
         auto andExpr = std::make_unique<ExpressionBinOp>(
             BinOpType::kAnd,
             std::make_unique<ExpressionBinOp>(
@@ -74,6 +71,33 @@ int main() {
         
         runFull(std::move(letExpr));
     }
+
+    {
+        auto iff = std::make_unique<ExpressionIf>(
+            std::make_unique<ExpressionVariable>("foo"),
+            std::make_unique<ExpressionBinOp>(
+                BinOpType::kAdd,
+                std::make_unique<ExpressionVariable>("foo"),
+                std::make_unique<ExpressionBinOp>(
+                    BinOpType::kAdd,
+                    makeConstInt(3),
+                    makeConstInt(4)
+                    )),
+            makeConstInt(0)
+            );
+            
+        std::vector<LetBind> binds;
+        binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(100))));
+        
+        auto letExpr = std::make_unique<ExpressionLet>(
+            std::move(binds),
+            std::move(iff)
+            );
+
+        runFull(std::move(letExpr));
+    }
+
+
 
     ExecInstructions execInstructions;
     execInstructions.append(InstrLoadConst{Register(0), makeInt(123)});

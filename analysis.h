@@ -3,39 +3,40 @@
 #include "instructions.h"
 
 bool isTempRead(CompilationResult* r, TempId id, size_t start = 0) {
-    for (auto& instr : r->instructions) {
+    for (size_t i = start; i < r->instructions.size(); ++i) {
+        const auto& instr = r->instructions[i];
         bool usedHere = std::visit(
             Overloaded{
-                [&](LInstrLoadConst& lc) {
+                [&](LInstrLoadConst lc) {
                     return false;
                 },
-                [&](LInstrAdd& a) {
+                [&](LInstrAdd a) {
                     return a.left == id || a.right == id;
                 },
-                [&](LInstrFillEmpty& a) {
+                [&](LInstrFillEmpty a) {
                     return a.left == id || a.right == id;
                 },
-                [&](LInstrJmp& j) {
+                [&](LInstrJmp j) {
                     return false;
                 },
-                [&](LInstrMove& m) {
+                [&](LInstrMove m) {
                     return m.src == id;
                 },
-                [&](LInstrMovePhi& m) {
+                [&](LInstrMovePhi m) {
                     return std::find(m.sources.begin(),
                                      m.sources.end(),
                                      id) != m.sources.end();
                 },
-                [&](LInstrLabel& l) {
+                [&](LInstrLabel l) {
                     return false;
                 },
-                [&](LInstrTestTruthy& t) {
+                [&](LInstrTestTruthy t) {
                     return t.reg == id;
                 },
-                [&](LInstrTestFalsey& t) {
+                [&](LInstrTestFalsey t) {
                     return t.reg == id;
                 },
-                [&](LInstrTestNothing& t) {
+                [&](LInstrTestNothing t) {
                     return t.reg == id;
                 }
             },

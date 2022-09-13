@@ -42,6 +42,12 @@ struct Runtime {
                 stackBase[regId] = stack[constId];
                 continue;
             }
+            case kMove: {
+                auto dstId = *(eip + 1);
+                auto srcId = *(eip + 2);
+                stackBase[dstId] = stackBase[srcId];
+                continue;
+            }
             case kAdd: {
                 auto dstReg = *(eip + 1);
                 auto leftReg = *(eip + 2);
@@ -80,16 +86,39 @@ struct Runtime {
                 auto r = *(eip + 2);
                 if (stackBase[l] == stackBase[r]) {
                     eip += kInstructionSize;
-                    
-                    std::cout << "jumping inline\n";
                     // Execute the following jmp instruction right here.
                     assert(*eip == kJmp);
                     auto offId = readFromMemory<uint16_t>(eip + 2);
-                    std::cout << "jumping by " << offId << std::endl;
-
                     eip += offId;
                 } else {
-                    std::cout << "skipping jump\n";
+                    eip += kInstructionSize;
+                }
+                continue;
+            }
+            case kTestTruthy: {
+                auto v = *(eip + 1);
+                // TODO: This probably has to be nicer when we do it for real.
+                bool testPasses = (stackBase[v].val != 0);
+                if (testPasses) {
+                    eip += kInstructionSize;
+                    assert(*eip == kJmp);
+                    auto offId = readFromMemory<uint16_t>(eip + 2);
+                    eip += offId;
+                } else {
+                    eip += kInstructionSize;
+                }
+                continue;
+            }
+            case kTestFalsey: {
+                auto v = *(eip + 1);
+                // TODO: This probably has to be nicer when we do it for real.
+                bool testPasses = (stackBase[v].val == 0);
+                if (testPasses) {
+                    eip += kInstructionSize;
+                    assert(*eip == kJmp);
+                    auto offId = readFromMemory<uint16_t>(eip + 2);
+                    eip += offId;
+                } else {
                     eip += kInstructionSize;
                 }
                 continue;
