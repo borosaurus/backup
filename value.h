@@ -41,6 +41,7 @@ using Tag = uint8_t;
 const Tag kTagNothing = 0;
 const Tag kTagInt = 1;
 const Tag kTagBool = 2;
+const Tag kTagSlot = 3;
 
 
 
@@ -70,7 +71,6 @@ struct ValTag {
     Value val;
     Tag tag;
 };
-
 struct SlotAccessor {
     ValTagOwned data;
 };

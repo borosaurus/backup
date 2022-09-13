@@ -73,6 +73,8 @@ int main() {
     }
 
     {
+        SlotAccessor s1{makeInt(101)};
+        
         auto iff = std::make_unique<ExpressionIf>(
             std::make_unique<ExpressionVariable>("foo"),
             std::make_unique<ExpressionBinOp>(
@@ -80,7 +82,8 @@ int main() {
                 std::make_unique<ExpressionVariable>("foo"),
                 std::make_unique<ExpressionBinOp>(
                     BinOpType::kAdd,
-                    makeConstInt(3),
+                    makeSlot(&s1),
+                    //makeConstInt(3),
                     makeConstInt(4)
                     )),
             makeConstInt(0)

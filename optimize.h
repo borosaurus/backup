@@ -41,6 +41,11 @@ void replaceTemp(CompilationResult* r, TempId oldTemp, TempId newTemp) {
                         lc.dst = newTemp;
                     }
                 },
+                [&](LInstrLoadSlot& lc) {
+                    if (lc.dst == oldTemp) {
+                        lc.dst = newTemp;
+                    }
+                },
                 [&](LInstrAdd& a) {
                     if (a.dst == oldTemp) {
                         a.dst = newTemp;
@@ -134,6 +139,9 @@ void computeConstraints(OptimizationCtx* ctx, const CompilationResult* r) {
             Overloaded{
                 [&](LInstrLoadConst lc) {
                     ctx->constraints[lc.dst] = TempConstraints{lc.constVal.tag == kTagNothing};
+                },
+                [&](LInstrLoadSlot lc) {
+                    ctx->constraints[lc.dst] = TempConstraints{true};
                 },
                 [&](LInstrAdd a) {
                     // Could be smarter about this.

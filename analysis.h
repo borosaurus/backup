@@ -10,6 +10,9 @@ bool isTempRead(CompilationResult* r, TempId id, size_t start = 0) {
                 [&](LInstrLoadConst lc) {
                     return false;
                 },
+                [&](LInstrLoadSlot lc) {
+                    return false;
+                },
                 [&](LInstrAdd a) {
                     return a.left == id || a.right == id;
                 },

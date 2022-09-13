@@ -5,16 +5,21 @@
 #include <math.h>
 #include <vector>
 
+struct SlotAccessor;
+
 using TempId = uint32_t;
 std::string tmpStr(TempId id) {
     return "T" + std::to_string(id);
 }
 
 
-
 struct LInstrLoadConst {
     TempId dst;
     ValTagOwned constVal;
+};
+struct LInstrLoadSlot {
+    TempId dst;
+    SlotAccessor* slot;
 };
 struct LInstrMove {
     TempId dst;
@@ -56,6 +61,7 @@ struct LInstrLabel {
 
 using LInstr = std::variant<
     LInstrLoadConst,
+    LInstrLoadSlot,
     LInstrAdd,
     LInstrFillEmpty,
     LInstrLabel,
@@ -86,6 +92,9 @@ struct CompilationResult {
                     [&](LInstrLoadConst lc) {
                         out += "loadc       " + tmpStr(lc.dst) + " " +
                             std::to_string(lc.constVal.tag) + ", " + std::to_string(lc.constVal.val);
+                    },
+                    [&](LInstrLoadSlot lc) {
+                        out += "loadslot    " + tmpStr(lc.dst) + " ";
                     },
                     [&](LInstrAdd a) {
                         out += "add         " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
@@ -136,6 +145,9 @@ std::optional<TempId> getDest(LInstr instr) {
             [&](LInstrLoadConst lc) -> std::optional<TempId> {
                 return lc.dst;
             },
+            [&](LInstrLoadSlot lc) -> std::optional<TempId> {
+                return lc.dst;
+            },
             [&](LInstrAdd a)  -> std::optional<TempId> {
                 return a.dst;
             },
@@ -178,6 +190,11 @@ struct InstrLoadConst {
     Register dst;
     ValTagOwned constVal;
 };
+struct InstrLoadSlot {
+    Register dst;
+    SlotAccessor* slot;
+};
+
 struct InstrMove {
     Register dst;
     Register src;

@@ -8,6 +8,7 @@
 
 enum InstrCode : char {
     kLoadConst,
+    kLoadSlot,
     kMove,
     kAdd,
     kEq,
@@ -32,6 +33,21 @@ struct ExecInstructions {
 
         assert(instructions.size() % 4 == 0);
     }
+
+    void append(InstrLoadSlot instr) {
+        instructions.push_back(InstrCode::kLoadSlot);
+        instructions.push_back(instr.dst);
+
+        // TODO: This should look up whether we already have the constant anywhere.
+        constants.push_back(ValTagOwned{(uint64_t)instr.slot, kTagSlot, 0});
+        
+        auto* addr = allocateSpace(sizeof(uint16_t));
+        const uint16_t offset16 = uint16_t(constants.size() - 1);
+        writeToMemory<uint16_t>(addr, offset16);
+
+        assert(instructions.size() % 4 == 0);
+    }
+    
     void append(InstrMove instr) {
         instructions.push_back(InstrCode::kMove);
         instructions.push_back(instr.dst);
@@ -121,7 +137,15 @@ struct ExecInstructions {
                 auto constId = readFromMemory<uint16_t>(eip + 2);
                 
                 out << "loadc       " << regStr(regId) << " " << "C(" <<
-                    constants[constId].tag << ", " << constants[constId].val << ")";
+                    (int)constants[constId].tag << ", " << constants[constId].val << ")";
+                continue;
+            }
+            case kLoadSlot: {
+                auto regId = *(eip + 1);
+                auto constId = readFromMemory<uint16_t>(eip + 2);
+                
+                out << "loadslot    " << regStr(regId) << " " << "slot(" <<
+                    (void*)constants[constId].val << ")";
                 continue;
             }
             case kMove: {
@@ -224,7 +248,6 @@ bool isTempLive(AssembleCtx* ctx,
 void chooseRegister(AssembleCtx* ctx,
                     TempId id,
                     size_t instructionIdx) {
-    std::cout << "Trying to choose register for " << tmpStr(id) << std::endl;
     if (ctx->tempToRegister.count(id)) {
         return;
     }
@@ -240,7 +263,7 @@ void chooseRegister(AssembleCtx* ctx,
         // <T0 never used again>
         // I can use the same register for T0 and T1.
         if (!isTempLive(ctx, tempIds.back(), instructionIdx + 1)) {
-            std::cout << "reg " << reg << " for " << tmpStr(tempIds.back()) << " can be used for " <<
+            std::cout << "reg " << regStr(reg) << " can be used for " <<
                 tmpStr(id) << std::endl;
             ctx->tempToRegister[id] = reg;
             // Note that this invalidates iterators
@@ -286,6 +309,13 @@ ExecInstructions assemble(CompilationResult* r) {
                         InstrLoadConst{
                             ctx.regFor(lc.dst),
                             lc.constVal
+                        });
+                },
+                [&](LInstrLoadSlot lc) {
+                    ret.append(
+                        InstrLoadSlot{
+                            ctx.regFor(lc.dst),
+                            lc.slot
                         });
                 },
                 [&](LInstrAdd a) {

@@ -190,6 +190,24 @@ std::unique_ptr<ExpressionVariable> makeVariable(std::string s) {
     return std::make_unique<ExpressionVariable>(s);
 }
 
+struct ExpressionSlot : public Expression {
+    ExpressionSlot(SlotAccessor* s): slot(s) {
+    }
+
+    virtual CompilationResult compile(CompileCtx* ctx) {
+        CompilationResult res;
+        res.tempId = ctx->nextId();
+        res.instructions.push_back(LInstrLoadSlot{res.tempId, slot});
+        return res;
+    }
+
+    SlotAccessor* slot;
+};
+std::unique_ptr<ExpressionSlot> makeSlot(SlotAccessor* s) {
+    return std::make_unique<ExpressionSlot>(s);
+}
+
+
 struct LetBind {
     LetBind(std::string n, std::unique_ptr<Expression> e):name(n), expr(std::move(e)) {}
     

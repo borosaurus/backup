@@ -42,6 +42,13 @@ struct Runtime {
                 stackBase[regId] = stack[constId];
                 continue;
             }
+            case kLoadSlot: {
+                auto regId = *(eip + 1);
+                auto constId = readFromMemory<uint16_t>(eip + 2);
+                SlotAccessor* slot = (SlotAccessor*)stack[constId].val;
+                stackBase[regId] = slot->data;
+                continue;
+            }
             case kMove: {
                 auto dstId = *(eip + 1);
                 auto srcId = *(eip + 2);
