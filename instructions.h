@@ -29,6 +29,11 @@ struct LInstrAdd {
     TempId left;
     TempId right;
 };
+struct LInstrFillEmpty {
+    TempId dst;
+    TempId left;
+    TempId right;
+};
 struct LInstrTestEq {
     TempId left;
     TempId right;
@@ -52,6 +57,7 @@ struct LInstrLabel {
 using LInstr = std::variant<
     LInstrLoadConst,
     LInstrAdd,
+    LInstrFillEmpty,
     LInstrLabel,
     LInstrTestTruthy,
     LInstrTestFalsey,
@@ -78,21 +84,25 @@ struct CompilationResult {
         for (auto& instr: instructions) {
             std::visit(Overloaded{
                     [&](LInstrLoadConst lc) {
-                        out += "loadc   " + tmpStr(lc.dst) + " " +
+                        out += "loadc       " + tmpStr(lc.dst) + " " +
                             std::to_string(lc.constVal.tag) + ", " + std::to_string(lc.constVal.val);
                     },
                     [&](LInstrAdd a) {
-                        out += "add     " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
+                        out += "add         " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
+                            tmpStr(a.right);
+                    },
+                    [&](LInstrFillEmpty a) {
+                        out += "fillempty   " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
                             tmpStr(a.right);
                     },
                     [&](LInstrJmp j) {
-                        out += "jmp     " + j.labelName;
+                        out += "jmp         " + j.labelName;
                     },
                     [&](LInstrMove m) {
-                        out += "mov     " + tmpStr(m.dst) + " " + tmpStr(m.src);
+                        out += "mov         " + tmpStr(m.dst) + " " + tmpStr(m.src);
                     },
                     [&](LInstrMovePhi m) {
-                        out += "mov     " + tmpStr(m.dst) + " phi(";
+                        out += "mov         " + tmpStr(m.dst) + " phi(";
                         for (auto& t : m.sources) {
                             out += tmpStr(t) + ", ";
                         }
@@ -103,13 +113,13 @@ struct CompilationResult {
                         out += l.name + ":";
                     },
                     [&](LInstrTestTruthy t) {
-                        out += "testt   " + tmpStr(t.reg);
+                        out += "testt       " + tmpStr(t.reg);
                     },
                     [&](LInstrTestFalsey t) {
-                        out += "testf   " + tmpStr(t.reg);
+                        out += "testf       " + tmpStr(t.reg);
                     },
                     [&](LInstrTestNothing t) {
-                        out += "testn   " + tmpStr(t.reg);
+                        out += "testn       " + tmpStr(t.reg);
                     }
                 },
                 instr);
@@ -119,6 +129,43 @@ struct CompilationResult {
         return out;
     }
 };
+
+std::optional<TempId> getDest(LInstr instr) {
+    return std::visit(
+        Overloaded{
+            [&](LInstrLoadConst lc) -> std::optional<TempId> {
+                return lc.dst;
+            },
+            [&](LInstrAdd a)  -> std::optional<TempId> {
+                return a.dst;
+            },
+            [&](LInstrFillEmpty a)  -> std::optional<TempId> {
+                return a.dst;
+            },
+            [&](LInstrJmp j)  -> std::optional<TempId> {
+                return {};
+            },
+            [&](LInstrMove m) -> std::optional<TempId> {
+                return m.dst;
+            },
+            [&](LInstrMovePhi m) -> std::optional<TempId> {
+                return m.dst;
+            },
+            [&](LInstrLabel l) -> std::optional<TempId> {
+                return {};
+            },
+            [&](LInstrTestTruthy t) -> std::optional<TempId> {
+                return {};
+            },
+            [&](LInstrTestFalsey t) -> std::optional<TempId> {
+                return {};
+            },
+            [&](LInstrTestNothing t) -> std::optional<TempId> {
+                return {};
+            }
+        },
+        instr);
+}
 
 
 // After register allocation

@@ -154,26 +154,7 @@ struct ExpressionBinOp : public Expression {
         auto rightRes = right->compile(ctx);
         
         if (type == BinOpType::kAnd) {
-            auto endLabel = ctx->nextLabel();
-
-            // Evaluate the left side
-            res.append(leftRes.instructions);
-            // If the value from the left side is nothing, the whole expression evaluates to nothing.
-            res.instructions.push_back(LInstrTestNothing{leftRes.tempId});
-            res.instructions.push_back(LInstrJmp{endLabel});
-
-            // If the left side is falsey, we jump to the end.
-            res.instructions.push_back(LInstrTestFalsey{leftRes.tempId});
-            res.instructions.push_back(LInstrJmp{endLabel});
-
-            // Otherwise evaluate the right side.
-            res.append(rightRes.instructions);
-            res.instructions.push_back(LInstrLabel{endLabel});
-
-            // Phi function
-            res.instructions.push_back(LInstrMovePhi{id,
-                    {leftRes.tempId, /* If the left result is nothing or false */
-                     rightRes.tempId}});
+            assert(0); // We always use the n ary one for compilation
         } else if (type == BinOpType::kAdd) {
             res.append(leftRes.instructions);
             res.append(rightRes.instructions);
@@ -219,6 +200,14 @@ struct LetBind {
 struct ExpressionLet : public Expression {
     ExpressionLet(std::vector<LetBind> bs, std::unique_ptr<Expression> body) :binds(std::move(bs)), body(std::move(body)) {}
 
+    std::unique_ptr<Expression> optimize(OwnedExpression self) {
+        for (auto& b : binds) {
+            b.expr = b.expr->optimize(std::move(b.expr));
+        }
+        body = body->optimize(std::move(body));
+        return self;
+    }
+    
     virtual CompilationResult compile(CompileCtx* ctx) {
         CompilationResult res;
         // Compile the bindings
@@ -252,6 +241,14 @@ struct ExpressionIf : public Expression {
          then(std::move(t)),
          els(std::move(e))
     {}
+
+        
+    std::unique_ptr<Expression> optimize(OwnedExpression self) {
+        condition = condition->optimize(std::move(condition));
+        then = then->optimize(std::move(then));
+        els = els->optimize(std::move(els));
+        return self;
+    }
 
     virtual CompilationResult compile(CompileCtx* ctx) {
         auto id = ctx->nextId();
@@ -293,6 +290,46 @@ struct ExpressionIf : public Expression {
     std::unique_ptr<Expression> then;
     std::unique_ptr<Expression> els;  
 };
+
+struct ExpressionCall : public Expression {
+    ExpressionCall(std::string fnName, std::vector<OwnedExpression> args)
+        :fnName(fnName),
+         args(std::move(args))
+    {}
+
+    std::unique_ptr<Expression> optimize(OwnedExpression self) {
+        for (auto& arg : args) {
+            arg = arg->optimize(std::move(arg));
+        }
+        return self;
+    }
+    
+    virtual CompilationResult compile(CompileCtx* ctx) {
+        auto id = ctx->nextId();
+        CompilationResult res{id};
+        if (fnName == "fillEmpty") {
+            assert(args.size() == 2);
+            auto leftRes = args[0]->compile(ctx);
+            auto rightRes = args[1]->compile(ctx);
+            res.append(leftRes.instructions);
+            res.append(rightRes.instructions);
+            res.instructions.push_back(LInstrFillEmpty{id, leftRes.tempId, rightRes.tempId});
+        } else {
+            assert(0);
+        }
+        return res;
+    }
+
+    std::string fnName;
+    std::vector<OwnedExpression> args;
+};
+std::unique_ptr<Expression> makeFillEmptyFalse(std::unique_ptr<Expression> e) {
+    std::vector<OwnedExpression> args;
+    args.push_back(std::move(e));
+    args.push_back(std::make_unique<ExpressionConst>(makeBool(false)));
+    return std::make_unique<ExpressionCall>("fillEmpty", std::move(args));
+}
+
 
 
 ///

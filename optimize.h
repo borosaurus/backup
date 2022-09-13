@@ -17,37 +17,8 @@ struct OptimizationCtx {
 size_t findDefinition(CompilationResult* r, TempId id) {
     size_t off = 0;
     for (auto& instr : r->instructions) {
-        bool isHere = std::visit(
-            Overloaded{
-                [&](LInstrLoadConst lc) {
-                    return lc.dst == id;
-                },
-                [&](LInstrAdd a) {
-                    return a.dst == id;
-                },
-                [&](LInstrJmp j) {
-                    return false;
-                },
-                [&](LInstrMove m) {
-                    return m.dst == id;
-                },
-                [&](LInstrMovePhi m) {
-                    return m.dst == id;
-                },
-                [&](LInstrLabel l) {
-                    return false;
-                },
-                [&](LInstrTestTruthy t) {
-                    return false;
-                },
-                [&](LInstrTestFalsey t) {
-                    return false;
-                },
-                [&](LInstrTestNothing t) {
-                    return false;
-                }
-            },
-            instr);
+        auto dest = getDest(instr);
+        bool isHere = dest && *dest == id;
         
         if (isHere) {
             return off;
@@ -56,6 +27,51 @@ size_t findDefinition(CompilationResult* r, TempId id) {
     }
 
     return -1;
+}
+
+bool isTempRead(CompilationResult* r, TempId id) {
+    for (auto& instr : r->instructions) {
+        bool usedHere = std::visit(
+            Overloaded{
+                [&](LInstrLoadConst& lc) {
+                    return false;
+                },
+                [&](LInstrAdd& a) {
+                    return a.left == id || a.right == id;
+                },
+                [&](LInstrFillEmpty& a) {
+                    return a.left == id || a.right == id;
+                },
+                [&](LInstrJmp& j) {
+                    return false;
+                },
+                [&](LInstrMove& m) {
+                    return m.src == id;
+                },
+                [&](LInstrMovePhi& m) {
+                    return std::find(m.sources.begin(),
+                                     m.sources.end(),
+                                     id) != m.sources.end();
+                },
+                [&](LInstrLabel& l) {
+                    return false;
+                },
+                [&](LInstrTestTruthy& t) {
+                    return t.reg == id;
+                },
+                [&](LInstrTestFalsey& t) {
+                    return t.reg == id;
+                },
+                [&](LInstrTestNothing& t) {
+                    return t.reg == id;
+                }
+            },
+            instr);
+        if (usedHere) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void replaceTemp(CompilationResult* r, TempId oldTemp, TempId newTemp) {
@@ -68,6 +84,17 @@ void replaceTemp(CompilationResult* r, TempId oldTemp, TempId newTemp) {
                     }
                 },
                 [&](LInstrAdd& a) {
+                    if (a.dst == oldTemp) {
+                        a.dst = newTemp;
+                    }
+                    if (a.left == oldTemp) {
+                        a.left = newTemp;
+                    }
+                    if (a.right == oldTemp) {
+                        a.right = newTemp;
+                    }
+                },
+                [&](LInstrFillEmpty& a) {
                     if (a.dst == oldTemp) {
                         a.dst = newTemp;
                     }
@@ -154,6 +181,12 @@ void computeConstraints(OptimizationCtx* ctx, const CompilationResult* r) {
                     // Could be smarter about this.
                     ctx->constraints[a.dst] = TempConstraints{true};
                 },
+                [&](LInstrFillEmpty a) {
+                    ctx->constraints[a.dst] = TempConstraints{
+                        // If you do fillEmpty(a, Nothing), then you still get nothing.
+                        ctx->constraints[a.right].canBeNothing
+                    };
+                },
                 [&](LInstrJmp j) {
                 },
                 [&](LInstrMove m) {
@@ -186,7 +219,25 @@ struct OptimizationPass {
     virtual ~OptimizationPass() = default;
 };
 
-struct RemoveRedundantNothingTest : public OptimizationPass {
+struct DeadStorePass : public OptimizationPass {
+    bool run(OptimizationCtx* ctx, CompilationResult* r) {
+        bool didAnything = false;
+        auto it = r->instructions.begin();
+        while (it != r->instructions.end()) {
+            auto dest = getDest(*it);
+            // The temp representing the whole output is an exception.
+            if (dest && *dest != r->tempId && !isTempRead(r, *dest)) {
+                it = r->instructions.erase(it);
+                didAnything = true;
+            } else {
+                ++it;
+            }
+        }
+        return didAnything;
+    }    
+};
+
+struct RemoveRedundantNothingPass : public OptimizationPass {
     bool run(OptimizationCtx* ctx, CompilationResult* r) {
         bool didAnything = false;
         auto it = r->instructions.begin();
@@ -197,6 +248,14 @@ struct RemoveRedundantNothingTest : public OptimizationPass {
                     // Erase this instruction and the following jump.
                     it = r->instructions.erase(it);
                     it = r->instructions.erase(it);
+                    continue;
+                }
+            }
+
+            if (auto fillEmpty = getAlternative<LInstrFillEmpty>(instr)) {
+                if (!ctx->constraints[fillEmpty->left].canBeNothing) {
+                    // Replace the fill empty with a simple move.
+                    *it = LInstrMove{fillEmpty->dst, fillEmpty->left};
                     continue;
                 }
             }
@@ -215,7 +274,8 @@ void optimizePreSSA(OptimizationCtx* ctx, CompilationResult* r) {
     }
     
     std::vector<std::unique_ptr<OptimizationPass>> passes;
-    passes.push_back(std::make_unique<RemoveRedundantNothingTest>());
+    passes.push_back(std::make_unique<RemoveRedundantNothingPass>());
+    passes.push_back(std::make_unique<DeadStorePass>());
     for (auto& p : passes) {
         p->run(ctx, r);
     }

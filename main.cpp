@@ -188,6 +188,7 @@ struct Runtime {
 
 
 void runFull(OwnedExpression expr) {
+    assert(expr);
     std::cout << "RUNNING\n";
     CompileCtx ctx;
     expr = expr->optimize(std::move(expr));
@@ -235,15 +236,21 @@ int main() {
     }
 
     {
+        std::vector<LetBind> binds;
+        binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
         auto andExpr = std::make_unique<ExpressionBinOp>(
             BinOpType::kAnd,
             std::make_unique<ExpressionBinOp>(
                 BinOpType::kAnd,
-                makeConstInt(1),
-                makeConstInt(2)),
+                makeFillEmptyFalse(makeVariable("foo")),
+                makeFillEmptyFalse(makeConstInt(2))),
             makeConstInt(3));
+
+        auto letExpr = std::make_unique<ExpressionLet>(
+            std::move(binds),
+            std::move(andExpr));
         
-        runFull(std::move(andExpr));
+        runFull(std::move(letExpr));
     }
 
     ExecInstructions execInstructions;
