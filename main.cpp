@@ -6,6 +6,7 @@
 #include "value.h"
 #include "expression.h"
 #include "instructions.h"
+#include "optimize.h"
 
 enum InstrCode : char {
     kLoadConst,
@@ -189,13 +190,39 @@ struct Runtime {
 
 int main() {
     {
-        auto c2 = std::make_unique<ExpressionConst>(makeInt(456));
-
-        auto varExpr = std::make_unique<ExpressionVariable>("foo");
-        auto add = std::make_unique<ExpressionAdd>(std::move(varExpr), std::move(c2));
-
+        auto iff = std::make_unique<ExpressionIf>(
+            std::make_unique<ExpressionVariable>("foo"),
+            std::make_unique<ExpressionConst>(makeInt(1)),
+            std::make_unique<ExpressionConst>(makeInt(0)));
+            
         std::vector<LetBind> binds;
         binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
+        
+        auto letExpr = std::make_unique<ExpressionLet>(
+            std::move(binds),
+            std::move(iff)
+            );
+
+        CompileCtx ctx;
+        auto res = letExpr->compile(&ctx);
+
+        std::cout << res.print() << std::endl;
+
+        std::cout << "Removing phi...\n";
+        removePhi(&res);
+        std::cout << res.print() << std::endl;
+        
+        std::cout << std::endl << std::endl;
+    }
+
+    {
+        auto c2 = std::make_unique<ExpressionConst>(makeInt(456));
+        auto varExpr = std::make_unique<ExpressionVariable>("foo");
+        auto add = std::make_unique<ExpressionAdd>(std::move(varExpr), std::move(c2));
+        
+        std::vector<LetBind> binds;
+        binds.push_back(LetBind("foo", std::make_unique<ExpressionConst>(makeInt(123))));
+
         
         auto letExpr = std::make_unique<ExpressionLet>(
             std::move(binds),
@@ -204,9 +231,7 @@ int main() {
 
         CompileCtx ctx;
         auto res = letExpr->compile(&ctx);
-
-        std::cout << res.print();
-        std::cout << std::endl << std::endl;
+        std::cout << res.print() << std::endl;        
     }
 
     

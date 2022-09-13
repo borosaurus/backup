@@ -11,51 +11,18 @@ struct LogicalInstructions {
 
 struct CompileCtx {
     TempId tempId = 0;
+    int labelId = 0;
 
     TempId nextId() {
         return tempId++;
     }
 
+    std::string nextLabel() {
+        return "l" + std::to_string(labelId++);
+    }
+
     std::map<std::string, TempId> varIds;
 };
-
-struct CompilationResult {
-    TempId tempId;
-    std::vector<LInstr> instructions;
-
-    void append(std::vector<LInstr>& moreInstructions) {
-        instructions.insert(instructions.end(),
-                            moreInstructions.begin(),
-                            moreInstructions.end());
-    }
-
-    std::string tmpStr(TempId id) {
-        return "T" + std::to_string(id);
-    }
-
-    std::string print() {
-        std::string out;
-
-        out += "Result at T" + std::to_string(tempId) + "\n";
-        for (auto& instr: instructions) {
-            std::visit(Overloaded{
-                    [&](LInstrLoadConst lc) {
-                        out += "loadc   " + tmpStr(lc.dst) + " " +
-                            std::to_string(lc.constVal.tag) + ", " + std::to_string(lc.constVal.val);
-                    },
-                    [&](LInstrAdd a) {
-                        out += "add     " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
-                            tmpStr(a.right);
-                    }
-                },
-                instr);
-
-            out += "\n";
-        }
-        return out;
-    }
-};
-
 
 // Expression
 struct Expression {
@@ -122,7 +89,7 @@ struct LetBind {
     std::unique_ptr<Expression> expr;
 };
     
-struct ExpressionLet {
+struct ExpressionLet : public Expression {
     ExpressionLet(std::vector<LetBind> bs, std::unique_ptr<Expression> body) :binds(std::move(bs)), body(std::move(body)) {}
 
     virtual CompilationResult compile(CompileCtx* ctx) {
@@ -150,5 +117,49 @@ struct ExpressionLet {
     std::vector<LetBind> binds;
     std::unique_ptr<Expression> body;  
 };
+
+struct ExpressionIf : public Expression {
+    ExpressionIf(std::unique_ptr<Expression> c, std::unique_ptr<Expression> t,
+                 std::unique_ptr<Expression> e)
+        :condition(std::move(c)),
+         then(std::move(t)),
+         els(std::move(e))
+    {}
+
+    virtual CompilationResult compile(CompileCtx* ctx) {
+        auto id = ctx->nextId();
+        
+        CompilationResult res{id};
+        auto condRes = condition->compile(ctx);
+
+        res.append(condRes.instructions);
+
+        auto trueLabel = ctx->nextLabel();
+        auto endLabel = ctx->nextLabel();
+
+        res.instructions.push_back(LInstrTestTruthy{condRes.tempId});
+        res.instructions.push_back(LInstrJmp{trueLabel});
+        // Compile the false branch
+
+        auto elseRes = els->compile(ctx);
+        res.append(elseRes.instructions);
+        //res.instructions.push_back(LInstrMove{id, elseRes.tempId});
+        res.instructions.push_back(LInstrJmp{endLabel});
+        
+        res.instructions.push_back(LInstrLabel{trueLabel});
+        auto thenRes = then->compile(ctx);
+        res.append(thenRes.instructions);
+        //res.instructions.push_back(LInstrMove{id, thenRes.tempId});
+        res.instructions.push_back(LInstrLabel{endLabel});
+        res.instructions.push_back(LInstrMovePhi{id, elseRes.tempId, thenRes.tempId});
+
+        return res;
+    }
+    
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Expression> then;
+    std::unique_ptr<Expression> els;  
+};
+
 
 ///

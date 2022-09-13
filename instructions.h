@@ -10,6 +10,15 @@ struct LInstrLoadConst {
     TempId dst;
     ValTagOwned constVal;
 };
+struct LInstrMove {
+    TempId dst;
+    TempId src;
+};
+struct LInstrMovePhi {
+    TempId dst;
+    TempId srcA;
+    TempId srcB;
+};
 struct LInstrAdd {
     TempId dst;
     TempId left;
@@ -18,6 +27,9 @@ struct LInstrAdd {
 struct LInstrTestEq {
     TempId left;
     TempId right;
+};
+struct LInstrTestTruthy {
+    TempId reg;
 };
 struct LInstrJmp {
     std::string labelName;
@@ -28,8 +40,67 @@ struct LInstrLabel {
 
 using LInstr = std::variant<
     LInstrLoadConst,
-    LInstrAdd
+    LInstrAdd,
+    LInstrLabel,
+    LInstrTestTruthy,
+    LInstrMove,
+    LInstrMovePhi,
+    LInstrJmp
     >;
+
+struct CompilationResult {
+    TempId tempId;
+    std::vector<LInstr> instructions;
+
+    void append(std::vector<LInstr>& moreInstructions) {
+        instructions.insert(instructions.end(),
+                            moreInstructions.begin(),
+                            moreInstructions.end());
+    }
+
+    std::string tmpStr(TempId id) {
+        return "T" + std::to_string(id);
+    }
+
+    std::string print() {
+        std::string out;
+
+        out += "Result at T" + std::to_string(tempId) + "\n";
+        for (auto& instr: instructions) {
+            std::visit(Overloaded{
+                    [&](LInstrLoadConst lc) {
+                        out += "loadc   " + tmpStr(lc.dst) + " " +
+                            std::to_string(lc.constVal.tag) + ", " + std::to_string(lc.constVal.val);
+                    },
+                    [&](LInstrAdd a) {
+                        out += "add     " + tmpStr(a.dst) + " " + tmpStr(a.left) + " " +
+                            tmpStr(a.right);
+                    },
+                    [&](LInstrJmp j) {
+                        out += "jmp     " + j.labelName;
+                    },
+                    [&](LInstrMove m) {
+                        out += "mov     " + tmpStr(m.dst) + " " + tmpStr(m.src);
+                    },
+                    [&](LInstrMovePhi m) {
+                        out += "mov     " + tmpStr(m.dst) + " phi(" +
+                            tmpStr(m.srcA) + ", " + tmpStr(m.srcB) + ")";
+                    },
+                    [&](LInstrLabel l) {
+                        out += l.name + ":";
+                    },
+                    [&](LInstrTestTruthy t) {
+                        out += "testt   " + tmpStr(t.reg);
+                    }
+                },
+                instr);
+
+            out += "\n";
+        }
+        return out;
+    }
+};
+
 
 // After register allocation
 using Register = uint8_t;
